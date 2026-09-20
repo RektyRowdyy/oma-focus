@@ -1,0 +1,138 @@
+#!/usr/bin/env bash
+# Emits one "appName<TAB>summary" line per desktop notification, for as long
+# as it runs. Nothing is stored and nothing leaves the machine.
+#
+# oma-focus cannot own org.freedesktop.Notifications — the Omarchy shell (or a
+# notification plugin inside it) already does, and only one process may. So to
+# silence individual apps we watch the bus instead and let the Service dismiss
+# what the active profile disallows. The cost is that the notification is
+# briefly visible first; see the README.
+#
+# Notify's signature is `susssasa{sv}i` (confirmed against
+# /usr/bin/omarchy-notification-send):
+#   1 string  app_name     <- wanted
+#   2 uint32  replaces_id
+#   3 string  app_icon
+#   4 string  summary      <- wanted
+#   5 string  body
+#   ... arrays, int32
+# We stop reading each call after the third top-level string, which is why the
+# body — the one field likely to contain raw newlines and break a line-based
+# parse — is never touched.
+set -euo pipefail
+
+if ! command -v dbus-monitor >/dev/null 2>&1; then
+  # --sweep still has work to do (killing strays) even here, so only the
+  # watching path is fatal.
+  [[ ${1-} == "--sweep" ]] || {
+    echo "oma-focus-notifywatch: dbus-monitor not found (install the dbus package)" >&2
+    exit 127
+  }
+fi
+
+# A match rule that can never fire: it matches no real interface, so it costs
+# nothing, and it stamps our dbus-monitor's command line with something no
+# other program on the machine would produce. That makes the straggler sweep
+# below exact rather than a guess at whose dbus-monitor this is.
+SIGNATURE="type='signal',interface='org.omafocus.WatcherMarker'"
+
+# Stop every watcher that is not this process's own. Exactly one should ever
+# run, since the service that starts it is a singleton — but an instance the
+# shell killed with SIGKILL had no chance to run its trap, so its dbus-monitor
+# is still on the bus with no parent and nothing to stop it.
+#
+# The service calls `--sweep` on startup whenever it does NOT want a watcher,
+# which is what stops a stranded one outliving the focus session that began it.
+sweep() {
+  local mypgid pid pgid
+  mypgid=$(ps -o pgid= -p $$ 2>/dev/null | tr -d ' ')
+  while read -r pid pgid; do
+    [[ -n $pid && -n $pgid && $pgid != "$mypgid" ]] || continue
+    kill -TERM -- "-$pgid" 2>/dev/null || true
+  done < <(ps -eo pid=,pgid=,args= | awk -v sig="omafocus.WatcherMarker" 'index($0, sig) { print $1, $2 }')
+}
+
+if [[ ${1-} == "--sweep" ]]; then
+  sweep
+  exit 0
+fi
+
+sweep
+
+# Run the pipeline as its own process group so it can be torn down as a unit.
+#
+# Quickshell stops this watcher by signalling the process it started — this
+# script. Without the group, dbus-monitor and awk survive that signal, are
+# reparented to systemd, and keep monitoring the bus forever; every shell
+# restart then leaves another pair behind. (Observed directly: 14 orphans
+# after an afternoon of restarts.)
+#
+# `set -m` gives the backgrounded subshell a process group of its own whose
+# id equals its pid, so `kill -- -$pid` reaches every process in it.
+set -m
+
+cleanup() {
+  trap - EXIT TERM INT HUP
+  [[ -n ${group-} ]] || exit 0
+  kill -TERM -- "-$group" 2>/dev/null || true
+  # SIGPIPE alone is not enough: dbus-monitor only notices a closed reader on
+  # its next write, which may be a long time coming on a quiet bus.
+  for _ in 1 2 3 4 5 6 7 8 9 10; do
+    kill -0 -- "-$group" 2>/dev/null || exit 0
+    sleep 0.05
+  done
+  kill -KILL -- "-$group" 2>/dev/null || true
+}
+trap cleanup EXIT TERM INT HUP
+
+# stdbuf keeps dbus-monitor line-buffered into the pipe; without it the output
+# arrives in 4k blocks and a dismissal could lag by many notifications.
+(
+  stdbuf -oL dbus-monitor --session \
+    "type='method_call',interface='org.freedesktop.Notifications',member='Notify'" \
+    "$SIGNATURE" 2>/dev/null |
+  awk '
+    # Top-level arguments are indented exactly three spaces by dbus-monitor;
+    # anything inside the actions array or the hints dict is deeper, so this
+    # anchor keeps nested strings from being counted as arguments.
+    function unquote(line,   s) {
+      s = line
+      sub(/^   string "/, "", s)
+      sub(/"$/, "", s)
+      gsub(/\\"/, "\"", s)
+      gsub(/\\\\/, "\\", s)
+      return s
+    }
+    # A tab would corrupt the field separator the reader splits on, and a
+    # newline would split one notification across two records.
+    function clean(s) {
+      gsub(/[\t\r\n]/, " ", s)
+      return s
+    }
+
+    /member=Notify$/ { collecting = 1; n = 0; app = ""; next }
+
+    collecting && /^   string "/ {
+      n++
+      if (n == 1) { app = unquote($0) }
+      else if (n == 3) {
+        summary = unquote($0)
+        collecting = 0
+        # An empty app name is unattributable, so there is nothing a per-app
+        # rule could match on; drop it rather than guess.
+        if (app != "") {
+          printf "%s\t%s\n", clean(app), clean(summary)
+          fflush()
+        }
+      }
+      next
+    }
+
+    # A malformed or truncated call must not leave the parser mid-record and
+    # mis-attribute the next notification.
+    collecting && /^method call / { collecting = 0; next }
+  '
+) &
+group=$!
+
+wait "$group"

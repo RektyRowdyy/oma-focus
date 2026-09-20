@@ -1,0 +1,212 @@
+#!/usr/bin/env bash
+# Privileged half of oma-focus: applies and removes a website block.
+#
+# Modelled directly on /usr/bin/omarchy-theme-set-browser-policy — same
+# PATH pinning, same fixed packaged path, same sudo-vs-pkexec selection, same
+# atomic install. Read that script alongside this one.
+#
+#   oma-focus-block on <domain>...   block these domains (replaces any current block)
+#   oma-focus-block off              remove the block entirely
+#   oma-focus-block status           print the domains currently blocked, one per line
+#
+# Two levers, because neither alone is enough:
+#   /etc/hosts           reaches every client on the machine, including Zen and
+#                        anything that is not a browser. systemd-resolved reads
+#                        and inotify-watches it, so edits apply with no reload.
+#   Chromium policy      DoH-proof, shows a real "blocked by your administrator"
+#                        page, and covers Omarchy webapps (omarchy-launch-webapp
+#                        forces Chromium regardless of the default browser).
+set -euo pipefail
+
+# A dev link (/etc/sudoers.d/omarchy-dev-path) can prepend a user-writable
+# checkout bin/ to secure_path, so pin PATH once we are root.
+if ((EUID == 0)); then
+  export PATH=/usr/local/sbin:/usr/local/bin:/usr/bin:/usr/sbin:/bin:/sbin
+fi
+
+# The path /etc/sudoers.d/oma-focus names. The privileged half always re-execs
+# from there rather than from whichever copy was invoked, so the NOPASSWD rule
+# matches even when this is run out of the plugin directory. This is also what
+# keeps the sudoers rule safe: /usr/local/bin/oma-focus-block is root-owned,
+# while the plugin directory is not.
+PACKAGED_PATH=/usr/local/bin/oma-focus-block
+
+HOSTS=/etc/hosts
+BEGIN_MARK="# >>> oma-focus >>>"
+END_MARK="# <<< oma-focus <<<"
+POLICY_FILE=oma-focus.json
+POLICY_DIRS=(
+  /etc/chromium/policies/managed
+  /etc/opt/chrome/policies/managed
+  /etc/opt/edge/policies/managed
+  /etc/brave/policies/managed
+)
+
+die() {
+  echo "oma-focus-block: $1" >&2
+  exit 1
+}
+
+usage() {
+  cat <<USAGE
+Usage: oma-focus-block on <domain>... | off | status
+
+  on <domain>...  Block the given domains. Replaces any block already in place.
+  off             Remove the block.
+  status          Print currently blocked domains, one per line.
+USAGE
+}
+
+# Only the domain arguments are caller-controlled; every path and every address
+# written below is a literal in this file. Validate before escalating, so a bad
+# argument never reaches a root-owned write.
+#
+# The pattern matches Model.js's DOMAIN_RE. It admits only lowercase LDH labels
+# with at least one dot, which excludes whitespace, shell metacharacters,
+# newlines, comment markers and bare IPs by construction.
+DOMAIN_RE='^[a-z0-9]([a-z0-9-]*[a-z0-9])?(\.[a-z0-9]([a-z0-9-]*[a-z0-9])?)+$'
+
+validate_domains() {
+  local d
+  for d in "$@"; do
+    [[ ${#d} -le 253 ]] || die "domain too long: '${d:0:60}...'"
+    [[ $d =~ $DOMAIN_RE ]] || die "not a valid domain: '$d' (expected lowercase letters, digits, hyphens and dots, e.g. instagram.com)"
+  done
+}
+
+# sudo's blanket %wheel rule answers "permitted" to everything, so only the long
+# listing's !authenticate tag proves the grant is actually passwordless.
+sudo_grants_passwordless() {
+  sudo -n -l -l "$PACKAGED_PATH" "$@" 2>/dev/null | grep -q '!authenticate'
+}
+
+require_root() {
+  if ((EUID == 0)); then
+    return
+  elif [[ -t 0 ]] || sudo_grants_passwordless "$@"; then
+    # A terminal can carry sudo's own password prompt. Without one, sudo is
+    # right only where the grant reaches; polkit can at least put a prompt on
+    # screen (omarchy.polkit runs the agent inside the shell).
+    [[ -x $PACKAGED_PATH ]] || die "$PACKAGED_PATH is not installed — run scripts/setup.sh, or invoke this script directly with sudo"
+    exec sudo "$PACKAGED_PATH" "$@"
+  else
+    [[ -x $PACKAGED_PATH ]] || die "$PACKAGED_PATH is not installed — run scripts/setup.sh first"
+    exec pkexec "$PACKAGED_PATH" "$@"
+  fi
+}
+
+# --- /etc/hosts -------------------------------------------------------------
+
+# Everything outside our marker pair is copied through byte for byte. There is
+# an unrelated "# Blocked domains" line already present on some systems; it is
+# not ours and is left exactly where it is.
+hosts_without_block() {
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+    $0 == b { skip = 1; next }
+    $0 == e { skip = 0; next }
+    !skip   { print }
+  ' "$HOSTS"
+}
+
+write_hosts() {
+  local staged kept
+  staged=$(mktemp) || die "could not create a temporary file"
+
+  # Trailing blank lines would otherwise accumulate one per re-apply, since
+  # the block below opens with one. Command substitution strips them all.
+  kept=$(hosts_without_block)
+  printf '%s\n' "$kept" >"$staged"
+
+  if (($# > 0)); then
+    {
+      printf '\n%s\n' "$BEGIN_MARK"
+      printf '# Managed by oma-focus. Removed when focus ends; edit the plugin, not this block.\n'
+      local d
+      for d in "$@"; do
+        # Both families, and the www. form: a browser sent to www.x.com must
+        # not slip past a block on x.com.
+        printf '127.0.0.1\t%s\n'  "$d"
+        printf '127.0.0.1\twww.%s\n' "$d"
+        printf '::1\t%s\n'  "$d"
+        printf '::1\twww.%s\n' "$d"
+      done
+      printf '%s\n' "$END_MARK"
+    } >>"$staged"
+  fi
+
+  # /etc/hosts is a pacman backup file; preserve the mode it ships with.
+  install -m 0644 -o root -g root -T "$staged" "$HOSTS"
+  rm -f -- "$staged"
+}
+
+# --- browser policy ---------------------------------------------------------
+
+# URLBlocklist entries without a scheme match every scheme and, per Chromium's
+# URL-blocklist filter format, every subdomain of the host.
+write_policy() {
+  local dir staged
+  for dir in "${POLICY_DIRS[@]}"; do
+    # Never create a policy root a browser does not already have, and never
+    # follow a symlink into one. Same guard omarchy-theme-set-browser-policy uses.
+    [[ -d $dir && ! -L $dir ]] || continue
+
+    if (($# == 0)); then
+      rm -f -- "$dir/$POLICY_FILE"
+      continue
+    fi
+
+    staged=$(mktemp) || die "could not create a temporary file"
+    # Built with jq, never string concatenation: the domains are validated
+    # above, but constructing JSON by hand is how that stops being true later.
+    if ! printf '%s\n' "$@" | jq -R . | jq -s '{URLBlocklist: .}' >"$staged"; then
+      rm -f -- "$staged"
+      die "could not build the policy document (is jq installed?)"
+    fi
+    install -m 0644 -o root -g root -T "$staged" "$dir/$POLICY_FILE"
+    rm -f -- "$staged"
+  done
+}
+
+# --- commands ---------------------------------------------------------------
+
+cmd_status() {
+  [[ -r $HOSTS ]] || exit 0
+  awk -v b="$BEGIN_MARK" -v e="$END_MARK" '
+    $0 == b { inblock = 1; next }
+    $0 == e { inblock = 0; next }
+    inblock && $1 == "127.0.0.1" && $2 !~ /^www\./ { print $2 }
+  ' "$HOSTS"
+}
+
+main() {
+  local action=${1-}
+  case $action in
+  -h | --help | "")
+    usage
+    exit 0
+    ;;
+  status)
+    # Read-only: never escalates.
+    cmd_status
+    ;;
+  on)
+    shift
+    (($# > 0)) || die "'on' needs at least one domain"
+    validate_domains "$@"
+    require_root on "$@"
+    write_hosts "$@"
+    write_policy "$@"
+    ;;
+  off)
+    require_root off
+    write_hosts
+    write_policy
+    ;;
+  *)
+    usage >&2
+    die "unknown command '$action'"
+    ;;
+  esac
+}
+
+main "$@"

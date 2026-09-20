@@ -1,0 +1,36 @@
+{
+  "schemaVersion": 1,
+  "id": "io.github.rektyrowdyy.focus",
+  "name": "Focus",
+  "version": "1.0.0",
+  "author": "RektyRowdyy",
+  "license": "MIT",
+  "description": "Apple-style Focus mode for Omarchy. Named profiles that block distracting websites and silence notifications — globally or per app — for a set duration or until you switch them off.",
+  "homepage": "https://github.com/RektyRowdyy/oma-focus",
+  "repository": "https://github.com/RektyRowdyy/oma-focus",
+  "kinds": ["service", "bar-widget"],
+  "keepLoaded": true,
+  "entryPoints": {
+    "service": "Service.qml",
+    "barWidget": "BarWidget.qml"
+  },
+  "barWidget": {
+    "displayName": "Focus",
+    "description": "Block distracting sites and silence notifications with one click.",
+    "category": "Wellbeing",
+    "allowMultiple": false,
+    "defaultSection": "right",
+    "defaults": {
+      "showCountdown": true
+    },
+    "schema": [
+      {
+        "key": "showCountdown",
+        "type": "boolean",
+        "label": "Show remaining time in the bar",
+        "description": "Display the countdown next to the icon while a timed focus session is running.",
+        "defaultValue": true
+      }
+    ]
+  }
+}
