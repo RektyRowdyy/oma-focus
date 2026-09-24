@@ -18,6 +18,9 @@ you don't want, for as long as you say — then puts everything back.
   silence all *but* a chosen few, or silence only a chosen few.
 - **Timers.** Run for 25m / 50m / 1h, or with no limit. The bar counts down and
   focus ends itself.
+- **Pause for a break.** Pausing lifts the block and the silencing and holds the
+  clock; resuming puts both back and carries on where it stopped. Skip ahead or
+  give yourself back five minutes at a time.
 - **It always lets go.** If the shell crashes or the machine reboots mid-session,
   the block is cleared the moment the shell comes back.
 
@@ -45,15 +48,20 @@ Omarchy) and `jq`. Both are used only as described below.
 
 | Action | What it does |
 |---|---|
-| Left-click the bar icon | Start or end focus, using the profile you used last |
+| Left-click the bar icon | Start focus with the profile you used last, or pause / resume a running session |
+| Middle-click the bar icon | End focus |
 | Right-click the bar icon | Open the panel |
+| Rewind 5 / Play-pause / Forward 5 in the panel | Add 5 minutes back (never past the session's full length), pause or resume, skip 5 minutes ahead |
 | `↑` `↓` in the panel | Move between profiles and blocked sites |
-| `Enter` | Start the profile under the cursor (or stop it, if it's running) |
+| `Enter` | Start the profile under the cursor (or pause / resume it, if it's running) |
 | `x` | Stop blocking the site under the cursor |
 | `Esc` | Close |
 
 While focus runs, the bar shows the time left. An untimed session shows a dot
-instead.
+instead. A paused session keeps its time on show, dimmed, and stays paused
+across a shell restart. Rewind and forward apply only to timed sessions;
+skipping forward past the end finishes the session. The switch in the panel
+ends focus outright.
 
 From a script or a keybinding:
 
