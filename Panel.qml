@@ -237,7 +237,7 @@ Panel {
 
           iconComponent: Component {
             Text {
-              text: "󰋱"  // nf-md-focus_field, same glyph as the bar
+              text: "󱅻"  // nf-md-meditation, same glyph as the bar
               color: root.foreground
               font.family: root.fontFamily
               font.pixelSize: Style.font.display

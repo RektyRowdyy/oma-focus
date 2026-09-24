@@ -30,9 +30,9 @@ BarWidget {
   }
   readonly property bool showCountdown: root.settingBool("showCountdown", true)
 
-  // nf-md-focus_field (U+F02F1). Verified present in the JetBrainsMono Nerd
+  // nf-md-meditation (U+F117B). Verified present in the JetBrainsMono Nerd
   // Font this bar resolves `monospace` to.
-  readonly property string glyph: "󰋱"
+  readonly property string glyph: "󱅻"
 
   // A vertical bar has no room for a number beside the icon, and an untimed
   // session has no number to show; both fall back to the accent dot.
