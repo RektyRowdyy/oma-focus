@@ -248,7 +248,12 @@ function usesGlobalDnd(profile) {
 // still running. Returns "" when there is no deadline (indefinite focus).
 function formatCountdown(endsAt, now) {
   if (!endsAt) return ""
-  var ms = Number(endsAt) - Number(now)
+  return formatRemaining(Number(endsAt) - Number(now))
+}
+
+// The same clock for a duration held still, as a paused session's time left is.
+function formatRemaining(ms) {
+  ms = Number(ms)
   if (!isFinite(ms) || ms <= 0) return "0:00"
   var total = Math.ceil(ms / 1000)
   var h = Math.floor(total / 3600)

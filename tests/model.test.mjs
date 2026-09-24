@@ -8,7 +8,7 @@ import assert from "node:assert/strict"
 
 const here = dirname(fileURLToPath(import.meta.url))
 const src = readFileSync(join(here, "..", "Model.js"), "utf8").replace(/^\.pragma library\s*$/m, "")
-const M = new Function(src + "\nreturn {toArray,normalizeDomain,validDomain,normalizeDomains,sanitizeProfile,sanitizeProfiles,findProfile,profileIndex,profileSummary,parseNotifyLine,appMatches,shouldSilence,needsWatcher,usesGlobalDnd,formatCountdown,expired,durationLabel,defaultProfiles,notifyLabel}")()
+const M = new Function(src + "\nreturn {toArray,normalizeDomain,validDomain,normalizeDomains,sanitizeProfile,sanitizeProfiles,findProfile,profileIndex,profileSummary,parseNotifyLine,appMatches,shouldSilence,needsWatcher,usesGlobalDnd,formatCountdown,formatRemaining,expired,durationLabel,defaultProfiles,notifyLabel}")()
 
 let n = 0
 const t = (name, fn) => { fn(); n++; }
@@ -129,6 +129,16 @@ t("formatCountdown rounds up and clamps", () => {
   assert.equal(M.formatCountdown(5, 10), "0:00")               // already past
   assert.equal(M.formatCountdown(-5000, 0), "0:00")            // a past deadline, not indefinite
   assert.equal(M.formatCountdown(null, 0), "")                 // only null/0 mean indefinite
+})
+
+t("formatRemaining formats a held duration", () => {
+  assert.equal(M.formatRemaining(0), "0:00")
+  assert.equal(M.formatRemaining(-1), "0:00")
+  assert.equal(M.formatRemaining(NaN), "0:00")
+  assert.equal(M.formatRemaining(1), "0:01")                   // rounds up to the next second
+  assert.equal(M.formatRemaining(45000), "0:45")
+  assert.equal(M.formatRemaining(23 * 60000 + 10000), "23:10")
+  assert.equal(M.formatRemaining(3723000), "1:02:03")
 })
 
 t("expired only fires on a real deadline", () => {

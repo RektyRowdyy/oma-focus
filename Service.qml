@@ -45,6 +45,12 @@ Item {
   // The DND value in force before this session turned it on, so "off" can put
   // the user's own setting back rather than assuming off.
   property string savedDnd: ""
+  // A paused session is a break: the profile stays selected, but the block and
+  // the silencing are lifted and the clock is held at pausedRemaining.
+  property bool paused: false
+  property double pausedRemaining: 0
+  // The session's full length, which rewinding never goes past.
+  property double totalMs: 0
 
   property bool storesReady: false
   property bool busy: false
@@ -58,12 +64,17 @@ Item {
   readonly property var activeProfile: root.activeName
     ? Model.findProfile(root.profiles, root.activeName) : null
   readonly property bool active: !!root.activeProfile
-  readonly property string countdown: root.active ? Model.formatCountdown(root.endsAt, root.now) : ""
-  readonly property bool timed: root.active && root.endsAt > 0
+  readonly property bool running: root.active && !root.paused
+  readonly property bool timed: root.active && (root.paused ? root.pausedRemaining > 0 : root.endsAt > 0)
+  readonly property double remainingMs: !root.timed ? 0
+    : (root.paused ? root.pausedRemaining : Math.max(0, root.endsAt - root.now))
+  readonly property string countdown: !root.active ? ""
+    : (root.paused ? (root.timed ? Model.formatRemaining(root.pausedRemaining) : "")
+                   : Model.formatCountdown(root.endsAt, root.now))
 
   readonly property string statusLine: {
     if (!root.active) return "Focus off"
-    var s = "Focus: " + root.activeProfile.name
+    var s = (root.paused ? "Focus paused: " : "Focus: ") + root.activeProfile.name
     if (root.countdown) s += " · " + root.countdown + " left"
     return s
   }
@@ -119,6 +130,9 @@ Item {
       property string activeName: ""
       property double endsAt: 0
       property string savedDnd: ""
+      property bool paused: false
+      property double pausedRemaining: 0
+      property double totalMs: 0
     }
   }
 
@@ -142,6 +156,9 @@ Item {
     root.activeName = String(stateAdapter.activeName || "")
     root.endsAt = Number(stateAdapter.endsAt) || 0
     root.savedDnd = String(stateAdapter.savedDnd || "")
+    root.paused = stateAdapter.paused === true
+    root.pausedRemaining = Math.max(0, Number(stateAdapter.pausedRemaining) || 0)
+    root.totalMs = Math.max(0, Number(stateAdapter.totalMs) || 0)
     root.markStoreReady()
   }
 
@@ -149,6 +166,9 @@ Item {
     stateAdapter.activeName = root.activeName
     stateAdapter.endsAt = root.endsAt
     stateAdapter.savedDnd = root.savedDnd
+    stateAdapter.paused = root.paused
+    stateAdapter.pausedRemaining = root.pausedRemaining
+    stateAdapter.totalMs = root.totalMs
     stateFile.writeAdapter()
   }
 
@@ -177,6 +197,15 @@ Item {
     if (root.activeName && !Model.findProfile(root.profiles, root.activeName)) {
       console.warn("oma-focus: active profile '" + root.activeName + "' no longer exists; ending focus")
       root.deactivate()
+      return
+    }
+    if (root.paused && root.active) {
+      // Mid-break: the clock is held, so nothing has expired, and the machine
+      // should be as free as it was when the pause began.
+      tick.running = false
+      root.applyBlock([])
+      root.clearNotifications()
+      root.saveState()
       return
     }
     if (root.active && Model.expired(root.endsAt, root.now)) {
@@ -397,6 +426,9 @@ Item {
 
     root.activeName = profile.name
     root.endsAt = mins > 0 ? Date.now() + mins * 60000 : 0
+    root.totalMs = mins * 60000
+    root.paused = false
+    root.pausedRemaining = 0
     root.now = Date.now()
     root.saveState()
 
@@ -417,6 +449,9 @@ Item {
     tick.running = false
     root.activeName = ""
     root.endsAt = 0
+    root.paused = false
+    root.pausedRemaining = 0
+    root.totalMs = 0
     root.applyBlock([])
     root.clearNotifications()
     root.saveState()
@@ -443,13 +478,72 @@ Item {
     if (!root.active) return false
     var mins = Math.floor(Number(minutes))
     if (!isFinite(mins) || mins <= 0) return false
-    var base = root.endsAt > 0 ? root.endsAt : Date.now()
-    root.endsAt = Math.min(base + mins * 60000, Date.now() + 1440 * 60000)
+    var cap = 1440 * 60000
+    var before = root.remainingMs
+    if (root.paused) {
+      root.pausedRemaining = Math.min(root.pausedRemaining + mins * 60000, cap)
+    } else {
+      var base = root.endsAt > 0 ? root.endsAt : Date.now()
+      root.endsAt = Math.min(base + mins * 60000, Date.now() + cap)
+      tick.running = true
+    }
     root.now = Date.now()
-    tick.running = true
+    root.totalMs = Math.min(root.totalMs + (root.remainingMs - before), cap)
     root.saveState()
     return true
   }
+
+  // --- pause / resume ---------------------------------------------------
+
+  function pause() {
+    if (!root.running) return false
+    root.now = Date.now()
+    root.pausedRemaining = root.endsAt > 0 ? Math.max(0, root.endsAt - root.now) : 0
+    root.endsAt = 0
+    root.paused = true
+    tick.running = false
+    root.applyBlock([])
+    root.clearNotifications()
+    root.saveState()
+    return true
+  }
+
+  function resume() {
+    if (!root.active || !root.paused) return false
+    root.now = Date.now()
+    root.endsAt = root.pausedRemaining > 0 ? root.now + root.pausedRemaining : 0
+    root.paused = false
+    root.pausedRemaining = 0
+    root.applyBlock(root.activeProfile.domains)
+    root.applyNotifications(root.activeProfile)
+    tick.running = root.endsAt > 0
+    root.saveState()
+    return true
+  }
+
+  function togglePause() {
+    return root.paused ? root.resume() : root.pause()
+  }
+
+  // Moves the time left by `minutes` (negative skips ahead), on a timed
+  // session only. Never past the session's full length; skipping through the
+  // end finishes the session the way the deadline would have.
+  function nudge(minutes) {
+    if (!root.timed) return false
+    // A session saved before totalMs existed has none; treat its time left as
+    // the ceiling rather than letting a zero cap end it.
+    var cap = root.totalMs > 0 ? root.totalMs : root.remainingMs
+    var next = Math.min(root.remainingMs + minutes * 60000, cap)
+    if (next <= 0) return root.deactivate()
+    root.now = Date.now()
+    if (root.paused) root.pausedRemaining = next
+    else root.endsAt = root.now + next
+    root.saveState()
+    return true
+  }
+
+  function forward() { return root.nudge(-5) }
+  function rewind() { return root.nudge(5) }
 
   // --- profile editing --------------------------------------------------
   //
@@ -466,7 +560,8 @@ Item {
     root.saveProfiles()
     // An edit to the running profile must reach the machine immediately,
     // otherwise the panel and /etc/hosts disagree until the next toggle.
-    if (root.active && Model.profileIndex(root.profiles, root.activeName) === idx) {
+    // A paused session has nothing applied, so there is nothing to update.
+    if (root.running && Model.profileIndex(root.profiles, root.activeName) === idx) {
       root.applyBlock(root.activeProfile.domains)
       root.applyNotifications(root.activeProfile)
     }
@@ -565,6 +660,7 @@ Item {
     function status(): string {
       return JSON.stringify({
         active: root.active,
+        paused: root.paused,
         profile: root.activeName,
         endsAt: root.endsAt,
         remaining: root.countdown,

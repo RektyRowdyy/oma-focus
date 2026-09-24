@@ -20,6 +20,7 @@ BarWidget {
   readonly property var service: bar && bar.shell ? bar.shell.serviceFor(root.moduleName) : null
 
   readonly property bool focusOn: service ? service.active === true : false
+  readonly property bool paused: service ? service.paused === true : false
   readonly property string countdown: service ? service.countdown : ""
   readonly property string profileName: service && service.activeProfile ? service.activeProfile.name : ""
   readonly property bool busy: service ? service.busy === true : false
@@ -42,11 +43,12 @@ BarWidget {
   readonly property string tooltipText: {
     if (!root.service) return "Focus"
     if (!root.focusOn) return "Focus off — click to start " + root.service.lastProfileName()
-    var t = "Focus: " + root.profileName
+    var t = (root.paused ? "Focus paused: " : "Focus: ") + root.profileName
     if (root.countdown) t += " · " + root.countdown + " left"
+    if (root.paused) return t + "\nLeft-click to resume · middle-click to stop"
     var p = root.service.activeProfile
     if (p) t += "\n" + Model.profileSummary(p)
-    return t + "\nRight-click for profiles"
+    return t + "\nLeft-click to pause · middle-click to stop · right-click for profiles"
   }
 
   readonly property color activeIconColor: bar ? bar.barForeground : Color.foreground
@@ -70,11 +72,17 @@ BarWidget {
 
   readonly property bool opened: panelLoader.item ? panelLoader.item.opened === true : false
 
-  // Left-click is the whole point of the plugin: start or end focus without
-  // opening anything. Right-click is for choosing which profile.
+  // Left-click is the whole point of the plugin: start focus, or pause and
+  // resume a running session, without opening anything. Middle-click ends it;
+  // right-click is for choosing which profile.
   function quickToggle() {
     if (!root.service) return
-    root.service.toggle("", -1)
+    if (root.focusOn) root.service.togglePause()
+    else root.service.toggle("", -1)
+  }
+
+  function stop() {
+    if (root.service && root.focusOn) root.service.deactivate()
   }
 
   implicitWidth: button.implicitWidth
@@ -95,9 +103,10 @@ BarWidget {
     }
   }
 
-  // One glyph for both states, dimmed when focus is off, rather than swapping
-  // shapes: the bar should read as "this is the focus control" at a glance,
-  // with brightness (plus the countdown, or the dot) carrying the state.
+  // One glyph for every state, dimmed when focus is off or paused, rather than
+  // swapping shapes: the bar should read as "this is the focus control" at a
+  // glance, with brightness (plus the countdown, or the dot) carrying the state.
+  // A paused countdown stays visible but dimmed, so it reads as held.
   //
   // WidgetButton rather than BarIconButton because the latter pins itself to a
   // square icon slot with labelVisible hard-coded false, leaving nowhere for
@@ -116,7 +125,7 @@ BarWidget {
 
     readonly property color glyphColor: button.active
       ? button.activeColor
-      : (root.focusOn ? button.foreground : root.dimIconColor)
+      : (root.focusOn && !root.paused ? button.foreground : root.dimIconColor)
 
     Row {
       id: content
@@ -145,7 +154,7 @@ BarWidget {
         // A small accent dot for anyone running with the countdown switched
         // off, or on an untimed session where there is no number to show.
         BorderSurface {
-          visible: root.focusOn && !root.showLabel
+          visible: root.focusOn && !root.paused && !root.showLabel
           width: Math.max(6, Style.bar.iconCanvas * 0.3)
           height: width
           radius: width / 2
@@ -172,6 +181,7 @@ BarWidget {
 
     onPressed: function (b) {
       if (b === Qt.LeftButton) root.quickToggle()
+      else if (b === Qt.MiddleButton) root.stop()
       else root.togglePanel()
     }
   }

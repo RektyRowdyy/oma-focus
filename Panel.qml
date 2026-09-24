@@ -28,6 +28,8 @@ Panel {
 
   readonly property var svc: root.service
   readonly property bool focusOn: svc ? svc.active === true : false
+  readonly property bool paused: svc ? svc.paused === true : false
+  readonly property bool timed: svc ? svc.timed === true : false
   readonly property var profiles: svc ? svc.profiles : []
   readonly property string countdown: svc ? svc.countdown : ""
   readonly property string lastError: svc ? svc.lastError : ""
@@ -160,10 +162,11 @@ Panel {
 
   function startProfile(name) {
     if (!root.svc) return
-    // Clicking the running profile ends the session; clicking another one
-    // switches straight to it rather than making the user stop first.
+    // Clicking the running profile pauses or resumes it, as a left-click on
+    // the bar icon does; clicking another one switches straight to it rather
+    // than making the user stop first.
     if (root.focusOn && root.svc.activeProfile && root.svc.activeProfile.name === name) {
-      root.svc.deactivate()
+      root.svc.togglePause()
       return
     }
     root.svc.activate(name, root.pendingMinutes)
@@ -216,7 +219,8 @@ Panel {
           foreground: root.foreground
           fontFamily: root.fontFamily
           title: root.focusOn && root.svc.activeProfile
-            ? ("Focus: " + root.svc.activeProfile.name) : "Focus off"
+            ? ((root.paused ? "Focus paused: " : "Focus: ") + root.svc.activeProfile.name)
+            : "Focus off"
 
           // `meta` is the uppercase caption under the title. While focus is off
           // it describes the profile being viewed, so the numbers underneath it
@@ -282,6 +286,42 @@ Panel {
                 }
               }
             }
+          }
+        }
+
+        // Transport for the running session. Rewind and forward move the time
+        // left by five minutes, so an untimed session only gets play/pause.
+        Row {
+          visible: root.focusOn
+          anchors.horizontalCenter: parent.horizontalCenter
+          spacing: Style.space(16)
+
+          PanelActionButton {
+            visible: root.timed
+            enabled: root.svc ? root.svc.remainingMs < root.svc.totalMs : false
+            opacity: enabled ? 1.0 : 0.35
+            iconText: "󱇹"  // nf-md-rewind_5
+            tooltipText: "Add 5 minutes back"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.svc.rewind()
+          }
+
+          PanelActionButton {
+            iconText: root.paused ? "󰐊" : "󰏤"  // nf-md-play / nf-md-pause
+            tooltipText: root.paused ? "Resume" : "Pause"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.svc.togglePause()
+          }
+
+          PanelActionButton {
+            visible: root.timed
+            iconText: "󱇸"  // nf-md-fast_forward_5
+            tooltipText: "Skip 5 minutes"
+            foreground: root.foreground
+            fontFamily: root.fontFamily
+            onClicked: root.svc.forward()
           }
         }
 
@@ -502,7 +542,7 @@ Panel {
         anchors.left: parent.left
         anchors.verticalCenter: parent.verticalCenter
         text: prow.isRunning ? "●" : "○"
-        color: prow.isRunning ? Color.accent : root.dim
+        color: prow.isRunning && !root.paused ? Color.accent : root.dim
         font.family: root.fontFamily
         font.pixelSize: Style.font.body
       }
