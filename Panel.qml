@@ -218,11 +218,6 @@ Panel {
           title: root.focusOn && root.svc.activeProfile
             ? ("Focus: " + root.svc.activeProfile.name) : "Focus off"
 
-          // `detail` renders as a pill beside the title, so it gets the one
-          // short, changing fact — the time left. Empty on an untimed session,
-          // which hides the pill rather than showing an empty badge.
-          detail: root.focusOn ? root.countdown : ""
-
           // `meta` is the uppercase caption under the title. While focus is off
           // it describes the profile being viewed, so the numbers underneath it
           // are never mistaken for a description of the off state.
@@ -245,16 +240,46 @@ Panel {
             }
           }
 
+          // The time left sits here beside the toggle rather than in the hero's
+          // `detail`, which PanelHero places in the title row: that aligns the
+          // pill with the title alone, leaving it off-center against the toggle.
+          // Hidden on an untimed session rather than showing an empty badge.
           trailingControl: Component {
-            ToggleSwitch {
-              checked: root.focusOn
-              busy: root.svc ? root.svc.busy === true : false
-              foreground: root.foreground
-              hasCursor: root.isCursor("primary", 0)
-              onHovered: function (on) { if (on) root.setCursor("primary", 0) }
-              onToggled: {
-                if (root.focusOn) root.svc.deactivate()
-                else root.primaryAction()
+            Row {
+              spacing: Style.space(10)
+
+              BorderSurface {
+                visible: root.focusOn && root.countdown !== ""
+                implicitWidth: countdownText.implicitWidth + Style.space(10)
+                implicitHeight: countdownText.implicitHeight + Style.space(4)
+                anchors.verticalCenter: parent.verticalCenter
+                color: "transparent"
+                borderSpec: Border.controlSpec("normal", root.foreground, Color.accent)
+                radius: Style.cornerRadius
+
+                Text {
+                  id: countdownText
+                  textFormat: Text.PlainText
+                  anchors.centerIn: parent
+                  text: root.countdown
+                  color: Qt.darker(root.foreground, 1.4)
+                  font.family: root.fontFamily
+                  font.pixelSize: Style.font.body
+                  font.bold: true
+                }
+              }
+
+              ToggleSwitch {
+                anchors.verticalCenter: parent.verticalCenter
+                checked: root.focusOn
+                busy: root.svc ? root.svc.busy === true : false
+                foreground: root.foreground
+                hasCursor: root.isCursor("primary", 0)
+                onHovered: function (on) { if (on) root.setCursor("primary", 0) }
+                onToggled: {
+                  if (root.focusOn) root.svc.deactivate()
+                  else root.primaryAction()
+                }
               }
             }
           }
