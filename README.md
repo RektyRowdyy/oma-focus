@@ -57,7 +57,7 @@ Omarchy) and `jq`. Both are used only as described below.
 | `x` | Stop blocking the site under the cursor |
 | `Esc` | Close |
 
-While focus runs, the bar shows the time left. An untimed session shows a dot
+While focus runs, the bar shows the time left. An untimed session shows ∞
 instead. A paused session keeps its time on show, dimmed, and stays paused
 across a shell restart. Rewind and forward apply only to timed sessions;
 skipping forward past the end finishes the session. The switch in the panel

@@ -35,10 +35,15 @@ BarWidget {
   // Font this bar resolves `monospace` to.
   readonly property string glyph: "󱅻"
 
-  // A vertical bar has no room for a number beside the icon, and an untimed
-  // session has no number to show; both fall back to the accent dot.
+  // An untimed session has no number to show, so it gets an infinity sign in
+  // the countdown's place.
+  readonly property bool untimed: service ? (root.focusOn && service.timed !== true) : false
+  readonly property string label: root.untimed ? "∞" : root.countdown
+
+  // A vertical bar has no room for a label beside the icon; it falls back to
+  // the accent dot.
   readonly property bool showLabel: !root.vertical && root.focusOn
-    && root.showCountdown && root.countdown !== ""
+    && root.showCountdown && root.label !== ""
 
   readonly property string tooltipText: {
     if (!root.service) return "Focus"
@@ -152,7 +157,7 @@ BarWidget {
         }
 
         // A small accent dot for anyone running with the countdown switched
-        // off, or on an untimed session where there is no number to show.
+        // off, or on a vertical bar with no room for the label.
         BorderSurface {
           visible: root.focusOn && !root.paused && !root.showLabel
           width: Math.max(6, Style.bar.iconCanvas * 0.3)
@@ -170,7 +175,7 @@ BarWidget {
       Text {
         visible: root.showLabel
         anchors.verticalCenter: parent.verticalCenter
-        text: root.countdown
+        text: root.label
         textFormat: Text.PlainText
         color: button.glyphColor
         font.family: button.fontFamily

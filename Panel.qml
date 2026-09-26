@@ -250,13 +250,13 @@ Panel {
           // The time left sits here beside the toggle rather than in the hero's
           // `detail`, which PanelHero places in the title row: that aligns the
           // pill with the title alone, leaving it off-center against the toggle.
-          // Hidden on an untimed session rather than showing an empty badge.
+          // An untimed session shows an infinity sign in place of the time.
           trailingControl: Component {
             Row {
               spacing: Style.space(10)
 
               BorderSurface {
-                visible: root.focusOn && root.countdown !== ""
+                visible: root.focusOn
                 implicitWidth: countdownText.implicitWidth + Style.space(10)
                 implicitHeight: countdownText.implicitHeight + Style.space(4)
                 anchors.verticalCenter: parent.verticalCenter
@@ -268,7 +268,7 @@ Panel {
                   id: countdownText
                   textFormat: Text.PlainText
                   anchors.centerIn: parent
-                  text: root.countdown
+                  text: root.countdown !== "" ? root.countdown : "∞"
                   color: Qt.darker(root.foreground, 1.4)
                   font.family: root.fontFamily
                   font.pixelSize: Style.font.body
