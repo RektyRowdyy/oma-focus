@@ -1,11 +1,11 @@
-# Focus
+# OMA-FOCUS
 
-Apple-style Focus mode for the [Omarchy](https://omarchy.org) shell.
+**OMA-FOCUS** — distraction blocking and notification control for the [Omarchy](https://omarchy.org) shell.
 
 One click blocks the websites you lose time to and silences the notifications
 you don't want, for as long as you say — then puts everything back.
 
-![Focus panel](preview.png)
+![OMA-FOCUS panel](preview.png)
 
 - **Named profiles.** Work, Personal, Sleep, or your own. Each has its own site
   list and its own notification rule. One runs at a time.
@@ -82,7 +82,7 @@ default. That is a constraint of the shell's IPC, not a preference.
 To bind focus to a key, add to `~/.config/hypr/bindings.conf`:
 
 ```
-bindd = SUPER SHIFT, F, Toggle focus mode, exec, omarchy-shell io.github.rektyrowdyy.focus toggle
+bindd = SUPER SHIFT, F, Toggle OMA-FOCUS, exec, omarchy-shell io.github.rektyrowdyy.focus toggle
 ```
 
 ## Configure
@@ -202,7 +202,7 @@ daemon and does not take over the notification bus.
 - **Silenced notifications flash before they disappear.** For `allow` and `block`,
   the notification is visible for roughly 50–150 ms first. This is not a bug that
   can be fixed from a plugin: the shell owns `org.freedesktop.Notifications` and
-  only one process can, so Focus cannot intercept a notification before it is
+  only one process can, so OMA-FOCUS cannot intercept a notification before it is
   shown — it can only dismiss it immediately afterwards. `notify: "all"` uses Do
   Not Disturb instead and has no flash.
 - **Dismissal matches on the summary text.** If a silenced app and an allowed app
@@ -210,7 +210,7 @@ daemon and does not take over the notification bus.
   dismissed. A notification with an empty summary is left alone.
 - **Zen and Firefox are covered by `/etc/hosts` but not by browser policy.** Their
   `policies.json` is read only at startup and lives in a package-owned directory,
-  so Focus does not touch it.
+  so OMA-FOCUS does not touch it.
 - **A browser with DNS-over-HTTPS switched on manually will bypass `/etc/hosts`.**
   Chromium and Chrome are still covered, because managed policy doesn't care
   about DNS. Zen and Firefox would not be.

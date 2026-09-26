@@ -70,7 +70,7 @@ function normalizeDomains(list) {
 // notify policies:
 //   "off"   leave notifications alone
 //   "all"   global DND — the daemon suppresses everything, nothing flashes
-//   "allow" silence everything except `apps` (Apple's "Allowed Notifications")
+//   "allow" silence everything except `apps`
 //   "block" silence only `apps`
 var NOTIFY_MODES = ["off", "all", "allow", "block"]
 

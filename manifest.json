@@ -1,11 +1,11 @@
 {
   "schemaVersion": 1,
   "id": "io.github.rektyrowdyy.focus",
-  "name": "Focus",
+  "name": "OMA-FOCUS",
   "version": "1.0.0",
   "author": "RektyRowdyy",
   "license": "MIT",
-  "description": "Apple-style Focus mode for Omarchy. Named profiles that block distracting websites and silence notifications — globally or per app — for a set duration or until you switch them off.",
+  "description": "OMA-FOCUS for Omarchy. Named profiles that block distracting websites and silence notifications — globally or per app — for a set duration or until you switch them off.",
   "homepage": "https://github.com/RektyRowdyy/oma-focus",
   "repository": "https://github.com/RektyRowdyy/oma-focus",
   "kinds": ["service", "bar-widget"],
@@ -15,7 +15,7 @@
     "barWidget": "BarWidget.qml"
   },
   "barWidget": {
-    "displayName": "Focus",
+    "displayName": "OMA-FOCUS",
     "description": "Block distracting sites and silence notifications with one click.",
     "category": "Wellbeing",
     "allowMultiple": false,
