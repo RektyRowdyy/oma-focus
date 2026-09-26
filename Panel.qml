@@ -45,8 +45,11 @@ Panel {
       && root.viewProfile.name === (svc.activeProfile ? svc.activeProfile.name : "")
 
   property int pendingMinutes: -1
-  readonly property int chosenMinutes: root.pendingMinutes >= 0
-    ? root.pendingMinutes : (root.viewProfile ? root.viewProfile.defaultMinutes : 0)
+  // A pending pick wins; otherwise the running profile shows the duration it
+  // was started with, and any other profile its own default.
+  readonly property int chosenMinutes: root.pendingMinutes >= 0 ? root.pendingMinutes
+    : root.viewIsActive ? root.svc.sessionMinutes
+    : (root.viewProfile ? root.viewProfile.defaultMinutes : 0)
 
   function syncView() {
     if (!root.svc) return

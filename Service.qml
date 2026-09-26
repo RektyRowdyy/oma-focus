@@ -51,6 +51,9 @@ Item {
   property double pausedRemaining: 0
   // The session's full length, which rewinding never goes past.
   property double totalMs: 0
+  // The duration the session was started with (0 = indefinite): the mode the
+  // user picked, which extending or nudging the time left doesn't change.
+  property int sessionMinutes: 0
 
   property bool storesReady: false
   property bool busy: false
@@ -133,6 +136,8 @@ Item {
       property bool paused: false
       property double pausedRemaining: 0
       property double totalMs: 0
+      // -1 marks a state file written before this field existed.
+      property int sessionMinutes: -1
     }
   }
 
@@ -159,6 +164,8 @@ Item {
     root.paused = stateAdapter.paused === true
     root.pausedRemaining = Math.max(0, Number(stateAdapter.pausedRemaining) || 0)
     root.totalMs = Math.max(0, Number(stateAdapter.totalMs) || 0)
+    var sm = Number(stateAdapter.sessionMinutes)
+    root.sessionMinutes = isFinite(sm) && sm >= 0 ? sm : Math.round(root.totalMs / 60000)
     root.markStoreReady()
   }
 
@@ -169,6 +176,7 @@ Item {
     stateAdapter.paused = root.paused
     stateAdapter.pausedRemaining = root.pausedRemaining
     stateAdapter.totalMs = root.totalMs
+    stateAdapter.sessionMinutes = root.sessionMinutes
     stateFile.writeAdapter()
   }
 
@@ -427,6 +435,7 @@ Item {
     root.activeName = profile.name
     root.endsAt = mins > 0 ? Date.now() + mins * 60000 : 0
     root.totalMs = mins * 60000
+    root.sessionMinutes = mins
     root.paused = false
     root.pausedRemaining = 0
     root.now = Date.now()
@@ -452,6 +461,7 @@ Item {
     root.paused = false
     root.pausedRemaining = 0
     root.totalMs = 0
+    root.sessionMinutes = 0
     root.applyBlock([])
     root.clearNotifications()
     root.saveState()
